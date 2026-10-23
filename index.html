@@ -1,0 +1,1206 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pose Master AI - เกมผจญภัยท่าทาง Computer Vision</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Kanit -->
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Canvas Confetti for Celebration -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    
+    <!-- MediaPipe Pose Dependencies -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1675466124/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/pose.js" crossorigin="anonymous"></script>
+
+    <style>
+        body {
+            font-family: 'Kanit', sans-serif;
+            background: linear-gradient(135deg, #1e1b4b 0%, #312e81 40%, #4338ca 100%);
+            min-height: 100vh;
+            color: #f8fafc;
+            user-select: none;
+        }
+
+        /* Video element flip for mirror effect */
+        .mirror {
+            transform: scaleX(-1);
+        }
+
+        /* Pulse Animations for status badge */
+        @keyframes pulse-red {
+            0%, 100% { box-shadow: 0 0 15px rgba(239, 68, 68, 0.6), inset 0 0 15px rgba(239, 68, 68, 0.4); }
+            50% { box-shadow: 0 0 30px rgba(239, 68, 68, 0.9), inset 0 0 25px rgba(239, 68, 68, 0.7); }
+        }
+
+        @keyframes pulse-green {
+            0%, 100% { box-shadow: 0 0 20px rgba(34, 197, 94, 0.8), inset 0 0 20px rgba(34, 197, 94, 0.5); }
+            50% { box-shadow: 0 0 45px rgba(34, 197, 94, 1), inset 0 0 35px rgba(34, 197, 94, 0.8); }
+        }
+
+        .border-feedback-red {
+            border: 6px solid #ef4444;
+            animation: pulse-red 1.5s infinite ease-in-out;
+        }
+
+        .border-feedback-green {
+            border: 6px solid #22c55e;
+            animation: pulse-green 0.8s infinite ease-in-out;
+        }
+
+        .glass-card {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+        }
+
+        .bounce-pop {
+            animation: pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        @keyframes pop {
+            0% { transform: scale(0.8); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+    </style>
+</head>
+<body class="flex flex-col min-h-screen justify-between p-2 sm:p-4">
+
+    <!-- Header & Score Bar -->
+    <header class="w-full max-w-6xl mx-auto glass-card rounded-2xl p-3 sm:p-4 mb-4 flex flex-wrap justify-between items-center shadow-xl gap-3">
+        <div class="flex items-center space-x-3">
+            <div class="bg-amber-400 text-slate-900 p-2 sm:p-3 rounded-xl shadow-lg flex items-center justify-center text-2xl font-black">
+                <i class="fa-solid fa-robot"></i>
+            </div>
+            <div>
+                <h1 class="text-xl sm:text-2xl font-extrabold tracking-wide text-amber-300">Pose Master AI</h1>
+                <p class="text-xs sm:text-sm text-indigo-200">เรียนรู้ Computer Vision ผ่านการเล่นเกม!</p>
+            </div>
+        </div>
+
+        <!-- Game Stats Panel -->
+        <div class="flex items-center space-x-3 sm:space-x-6">
+            <!-- Remaining Poses Count Badge -->
+            <div class="bg-indigo-950/60 border border-indigo-500/30 px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-center">
+                <span class="text-xs text-indigo-300 block uppercase font-bold">ท่าที่เหลือ</span>
+                <span id="remaining-poses-display" class="text-2xl sm:text-3xl font-black text-cyan-400">11</span>
+            </div>
+
+            <!-- Score -->
+            <div class="bg-indigo-950/60 border border-indigo-500/30 px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-center">
+                <span class="text-xs text-indigo-300 block uppercase font-bold">คะแนน</span>
+                <span id="score-display" class="text-2xl sm:text-3xl font-black text-emerald-400">0</span>
+            </div>
+
+            <!-- Streak -->
+            <div class="bg-indigo-950/60 border border-indigo-500/30 px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-center">
+                <span class="text-xs text-indigo-300 block uppercase font-bold">ต่อเนื่อง</span>
+                <span id="streak-display" class="text-2xl sm:text-3xl font-black text-amber-400">🔥 0</span>
+            </div>
+
+            <!-- Timer with Duration Selector -->
+            <div class="bg-indigo-950/60 border border-indigo-500/30 px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-center">
+                <div class="flex items-center justify-center space-x-1 mb-0.5">
+                    <span class="text-xs text-indigo-300 uppercase font-bold">เวลา</span>
+                    <select id="duration-select" onchange="changeGameDuration(this.value)" class="bg-indigo-900/90 text-rose-300 text-xs font-bold rounded px-1.5 py-0.5 border border-rose-500/40 focus:outline-none cursor-pointer hover:bg-indigo-800">
+                        <option value="30">30s</option>
+                        <option value="60" selected>60s</option>
+                        <option value="90">90s</option>
+                        <option value="120">120s</option>
+                    </select>
+                </div>
+                <span id="timer-display" class="text-2xl sm:text-3xl font-black text-rose-400">60s</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Game Arena -->
+    <main class="w-full max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-4 flex-grow items-start">
+        
+        <!-- Camera View Section (Left Column) -->
+        <section class="lg:col-span-8 flex flex-col items-center w-full">
+            <div id="webcam-container" class="relative w-full aspect-[4/3] rounded-3xl overflow-hidden glass-card border-feedback-red transition-all duration-300 shadow-2xl bg-slate-900/80 flex items-center justify-center">
+                
+                <!-- Video Element (Hidden rendering target) -->
+                <video id="webcam" class="absolute w-full h-full object-cover mirror hidden" playsinline muted></video>
+                
+                <!-- Canvas Element (User View with skeleton) -->
+                <canvas id="output-canvas" class="absolute w-full h-full object-cover mirror"></canvas>
+
+                <!-- Status Badge Overlay -->
+                <div id="status-badge" class="absolute top-4 left-4 right-4 sm:top-6 sm:left-6 sm:right-6 flex justify-between items-center pointer-events-none">
+                    <div id="status-indicator" class="bg-rose-600/90 text-white font-bold px-4 py-2 rounded-full text-sm sm:text-base shadow-lg flex items-center space-x-2 backdrop-blur-md">
+                        <span class="w-3 h-3 rounded-full bg-white animate-ping"></span>
+                        <span id="status-text">กำลังตรวจจับท่าทาง...</span>
+                    </div>
+
+                    <!-- Hold Pose Counter -->
+                    <div id="hold-container" class="hidden bg-emerald-500/90 text-white font-black px-4 py-2 rounded-full text-sm sm:text-base shadow-lg flex items-center space-x-2 backdrop-blur-md">
+                        <i class="fa-solid fa-clock animate-spin"></i>
+                        <span>ค้างไว้: <span id="hold-time">1.2</span>s</span>
+                    </div>
+                </div>
+
+                <!-- Pose Transition Countdown Overlay (3s countdown) -->
+                <div id="transition-overlay" class="absolute inset-0 bg-slate-950/85 backdrop-blur-md flex flex-col items-center justify-center p-6 text-center z-10 hidden transition-all duration-300">
+                    <div class="text-amber-400 font-extrabold text-xl sm:text-2xl mb-1 flex items-center space-x-2">
+                        <i class="fa-solid fa-star text-amber-300 animate-spin"></i>
+                        <span id="transition-heading">เก่งมาก! เตรียมตัวท่าถัดไป...</span>
+                    </div>
+                    <div id="transition-pose-name" class="text-white text-2xl sm:text-4xl font-black mb-4 drop-shadow-lg">
+                        ชูมือสองข้างขึ้นฟ้า
+                    </div>
+                    <div id="countdown-number" class="text-7xl sm:text-8xl font-black text-cyan-300 animate-bounce tracking-widest drop-shadow-[0_10px_10px_rgba(0,0,0,0.5)]">
+                        3
+                    </div>
+                </div>
+
+                <!-- Camera Loading / Prompt Screen -->
+                <div id="camera-prompt" class="absolute inset-0 bg-slate-950/90 flex flex-col items-center justify-center p-6 text-center z-20">
+                    <div class="w-20 h-20 bg-amber-500/20 text-amber-400 rounded-full flex items-center justify-center text-4xl mb-4 animate-bounce">
+                        <i class="fa-solid fa-video"></i>
+                    </div>
+                    <h2 class="text-2xl font-bold text-white mb-2">พร้อมเริ่มสนุกหรือยัง?</h2>
+                    <p class="text-indigo-200 text-sm max-w-md mb-6">กดยินยอมใช้งานกล้องเว็บแคม จากนั้นขยับร่างกายให้ตรงตามท่าทางที่ AI กำหนดให้ได้!</p>
+                    
+                    <button id="start-btn" onclick="initCameraAndStart()" class="bg-gradient-to-r from-amber-400 to-orange-500 hover:from-amber-500 hover:to-orange-600 text-slate-950 font-black text-lg px-8 py-3.5 rounded-2xl shadow-xl transform active:scale-95 transition-all flex items-center space-x-2">
+                        <i class="fa-solid fa-camera mr-2"></i> 
+                        <span>เปิดกล้อง & เริ่มเกมเลย!</span>
+                    </button>
+
+                    <!-- Camera Error Notice -->
+                    <div id="camera-error-msg" class="hidden mt-4 bg-rose-500/20 border border-rose-500/50 text-rose-200 text-xs sm:text-sm p-3 rounded-xl max-w-md text-left">
+                        <i class="fa-solid fa-triangle-exclamation text-rose-400 mr-1"></i>
+                        <span id="camera-error-text">ไม่สามารถเปิดกล้องได้ โปรดอนุญาตสิทธิ์การเข้าถึงกล้องบนเบราว์เซอร์ของคุณ</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Game Control Buttons -->
+            <div class="flex flex-wrap justify-between items-center w-full mt-3 gap-2">
+                <div class="flex items-center space-x-2 bg-indigo-900/80 border border-indigo-500/40 px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold">
+                    <i class="fa-solid fa-camera text-cyan-400"></i>
+                    <select id="camera-select" onchange="changeCamera(this.value)" class="bg-transparent text-indigo-100 focus:outline-none border-none cursor-pointer max-w-[150px] sm:max-w-[200px] truncate">
+                        <option value="" class="bg-slate-900 text-white">เลือกกล้องเว็บแคม...</option>
+                    </select>
+                </div>
+
+                <div class="flex items-center space-x-2">
+                    <button onclick="openPoseManagerModal()" class="bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold transition flex items-center space-x-1.5">
+                        <i class="fa-solid fa-list-check text-amber-400"></i>
+                        <span>จัดการท่าโพส</span>
+                    </button>
+
+                    <button onclick="toggleTeacherMode()" class="bg-indigo-900/80 hover:bg-indigo-800 text-indigo-200 border border-indigo-500/40 px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold transition flex items-center space-x-1.5">
+                        <i class="fa-solid fa-graduation-cap text-amber-400"></i>
+                        <span id="teacher-toggle-text">มุมมอง AI</span>
+                    </button>
+                </div>
+
+                <button id="restart-btn" onclick="resetGame()" class="bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold transition flex items-center space-x-2">
+                    <i class="fa-solid fa-rotate-right"></i>
+                    <span>เริ่มเล่นใหม่</span>
+                </button>
+            </div>
+        </section>
+
+        <!-- Target Pose & AI Explanation Section (Right Column) -->
+        <section class="lg:col-span-4 flex flex-col space-y-4 w-full">
+            
+            <!-- Target Pose Card -->
+            <div class="glass-card rounded-3xl p-5 shadow-2xl relative overflow-hidden border border-amber-400/30">
+                <div class="text-xs font-extrabold text-amber-400 uppercase tracking-widest mb-1">ภารกิจท่าทางปัจจุบัน</div>
+                
+                <div class="flex items-center justify-between mb-3">
+                    <h2 id="pose-title" class="text-2xl font-extrabold text-white">ชูมือสองข้างขึ้นฟ้า</h2>
+                    <span id="difficulty-badge" class="bg-amber-400/20 text-amber-300 border border-amber-400/40 px-3 py-0.5 rounded-full text-xs font-bold">ง่าย</span>
+                </div>
+
+                <!-- Target Graphic / Icon -->
+                <div class="w-full h-48 bg-indigo-950/80 rounded-2xl border border-indigo-500/30 flex flex-col items-center justify-center p-4 relative mb-3">
+                    <div id="pose-icon" class="text-7xl text-amber-300 mb-2 bounce-pop">
+                        🙌
+                    </div>
+                    <p id="pose-description" class="text-sm text-center text-indigo-200 font-medium">
+                        ยืดตัวตรงแล้วชูมือทั้งสองข้างขึ้นสูงเหนือศีรษะ!
+                    </p>
+                </div>
+
+                <!-- Accuracy Progress Bar -->
+                <div>
+                    <div class="flex justify-between text-xs font-bold mb-1">
+                        <span class="text-indigo-300">ความแม่นยำของท่าทาง</span>
+                        <span id="accuracy-percentage" class="text-amber-400">0%</span>
+                    </div>
+                    <div class="w-full bg-slate-900 rounded-full h-3 overflow-hidden border border-indigo-500/20">
+                        <div id="accuracy-bar" class="bg-gradient-to-r from-rose-500 via-amber-400 to-emerald-400 h-full transition-all duration-200" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Computer Vision Teaching Explainer Panel -->
+            <div id="cv-explainer" class="glass-card rounded-3xl p-5 shadow-xl border border-cyan-400/30">
+                <div class="flex items-center justify-between mb-2">
+                    <h3 class="text-base font-extrabold text-cyan-300 flex items-center space-x-2">
+                        <i class="fa-solid fa-microchip"></i>
+                        <span>AI เห็นอะไรในร่างกายเรา?</span>
+                    </h3>
+                    <span class="text-xs text-cyan-200/70">MediaPipe Pose</span>
+                </div>
+
+                <p class="text-xs text-indigo-200 mb-3 leading-relaxed">
+                    กล้องจะแปลงภาพเด็กๆ ให้กลายเป็น <strong class="text-amber-300">พิกัดจุดข้อต่อ 33 จุด (Keypoints)</strong> บนระนาบ X, Y และใช้เงื่อนไขคณิตศาสตร์คำนวณตำแหน่ง
+                </p>
+
+                <!-- CV Keypoints Stats Feed -->
+                <div class="bg-slate-950/80 rounded-xl p-3 font-mono text-xs text-cyan-400 space-y-1.5 border border-cyan-500/20">
+                    <div class="flex justify-between">
+                        <span class="text-slate-400">มือซ้าย (Wrist L):</span>
+                        <span id="cv-left-wrist">x: 0.00, y: 0.00</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-slate-400">มือขวา (Wrist R):</span>
+                        <span id="cv-right-wrist">x: 0.00, y: 0.00</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-slate-400">หัวไหล่ (Shoulders):</span>
+                        <span id="cv-shoulders">y_avg: 0.00</span>
+                    </div>
+                    <div class="border-t border-slate-800 pt-1.5 flex justify-between font-bold">
+                        <span class="text-amber-400">เงื่อนไขปัจจุบัน:</span>
+                        <span id="cv-condition" class="text-amber-300 text-[11px]">Wrist.y &lt; Shoulder.y</span>
+                    </div>
+                </div>
+            </div>
+
+        </section>
+    </main>
+
+    <!-- Custom Modal Message for Game Over -->
+    <div id="game-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 z-50 hidden">
+        <div class="glass-card bg-slate-900 border border-amber-400/40 max-w-md w-full rounded-3xl p-6 text-center shadow-2xl bounce-pop">
+            <div class="w-20 h-20 bg-amber-400/20 text-amber-400 rounded-full flex items-center justify-center text-4xl mx-auto mb-4">
+                <i id="modal-icon" class="fa-solid fa-trophy"></i>
+            </div>
+            <h2 id="modal-title" class="text-3xl font-black text-white mb-2">หมดเวลาแล้ว!</h2>
+            <p id="modal-message" class="text-indigo-200 text-sm mb-6">เก่งมากเลย! น้องๆ ทำคะแนนไปได้ทั้งหมด</p>
+            
+            <div class="bg-indigo-950/70 border border-indigo-500/30 rounded-2xl p-4 mb-6">
+                <span class="text-xs text-indigo-300 uppercase font-bold block">คะแนนรวมสุทธิ</span>
+                <span id="modal-score" class="text-4xl font-black text-amber-400">0</span>
+            </div>
+
+            <button onclick="closeModalAndRestart()" class="w-full bg-gradient-to-r from-amber-400 to-orange-500 hover:from-amber-500 hover:to-orange-600 text-slate-950 font-black text-lg py-3 rounded-xl shadow-lg transition transform active:scale-95">
+                เล่นอีกครั้ง! 🚀
+            </button>
+        </div>
+    </div>
+
+    <!-- Modal for Pose Management & Deletion -->
+    <div id="pose-manager-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 z-50 hidden">
+        <div class="glass-card bg-slate-900 border border-indigo-500/40 max-w-lg w-full rounded-3xl p-5 shadow-2xl flex flex-col max-h-[85vh] bounce-pop">
+            <div class="flex justify-between items-center mb-3 border-b border-slate-800 pb-3">
+                <div class="flex items-center space-x-2">
+                    <div class="w-9 h-9 bg-amber-400/20 text-amber-400 rounded-xl flex items-center justify-center text-lg">
+                        <i class="fa-solid fa-sliders"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-extrabold text-white">จัดการท่าโพส</h3>
+                        <p class="text-xs text-indigo-300">เปิด-ปิดท่าที่ต้องการเล่น ระบบจะจำค่าไว้แม้ปิดหน้าเว็บ</p>
+                    </div>
+                </div>
+                <button onclick="closePoseManagerModal()" class="text-slate-400 hover:text-white p-2 rounded-lg text-lg">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <!-- List of Poses with Delete controls -->
+            <div id="pose-manager-list" class="overflow-y-auto space-y-2 pr-1 my-2 flex-grow max-h-[50vh]">
+                <!-- Dynamic List Items Rendered via JS -->
+            </div>
+
+            <div class="flex justify-between items-center pt-3 border-t border-slate-800 gap-2">
+                <button onclick="restoreDefaultPoses()" class="bg-indigo-900/60 hover:bg-indigo-800 text-indigo-200 border border-indigo-500/30 px-3 py-2 rounded-xl text-xs font-semibold transition">
+                    <i class="fa-solid fa-rotate-left mr-1"></i> คืนค่าท่าตั้งต้นทั้งหมด
+                </button>
+                <button onclick="closePoseManagerModal()" class="bg-gradient-to-r from-amber-400 to-orange-500 hover:from-amber-500 hover:to-orange-600 text-slate-950 font-extrabold px-5 py-2 rounded-xl text-sm transition shadow-md">
+                    เสร็จสิ้น
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- Web Audio API Synth for Zero-Dependency Sound Effects ---
+        class SoundFX {
+            constructor() {
+                this.ctx = null;
+            }
+
+            init() {
+                if (!this.ctx) {
+                    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+            }
+
+            playSuccess() {
+                if (!this.ctx) return;
+                const now = this.ctx.currentTime;
+                const freqs = [523.25, 659.25, 783.99, 1046.50];
+                freqs.forEach((freq, index) => {
+                    const osc = this.ctx.createOscillator();
+                    const gain = this.ctx.createGain();
+                    osc.type = 'triangle';
+                    osc.frequency.value = freq;
+                    gain.gain.setValueAtTime(0.15, now + index * 0.08);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + index * 0.08 + 0.25);
+                    osc.connect(gain);
+                    gain.connect(this.ctx.destination);
+                    osc.start(now + index * 0.08);
+                    osc.stop(now + index * 0.08 + 0.25);
+                });
+            }
+
+            playBeep() {
+                if (!this.ctx) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.value = 880;
+                gain.gain.setValueAtTime(0.1, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.1);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.1);
+            }
+        }
+
+        const sound = new SoundFX();
+
+        // --- Pose Helpers ---
+        // หมายเหตุ: พิกัด x ของ MediaPipe เป็นภาพก่อนกลับด้าน ข้างซ้ายของผู้เล่น (11,13,15,23,25) จะมีค่า x มากกว่าข้างขวา
+        const clampPct = (v) => Math.max(0, Math.min(100, Math.round(v)));
+
+        function isPoseVisible(lm, ids, threshold = 0.5) {
+            return ids.every(i => lm[i] && (lm[i].visibility ?? 1) > threshold);
+        }
+
+        // ระยะสะโพก→เข่า เทียบกับความยาวลำตัว (ยืนตรง ≈ 0.9, ย่อตัว < 0.55) ไม่ขึ้นกับความสูงของกล้อง
+        function squatRatio(lm) {
+            const shoulderY = (lm[11].y + lm[12].y) / 2;
+            const hipY = (lm[23].y + lm[24].y) / 2;
+            const kneeY = (lm[25].y + lm[26].y) / 2;
+            const torso = Math.max(0.05, hipY - shoulderY);
+            return (kneeY - hipY) / torso;
+        }
+
+        // --- Target Poses Database for Kids ---
+        const DEFAULT_POSES = [
+            {
+                id: 'both_hands_up',
+                title: 'ชูมือสองข้างขึ้นฟ้า',
+                icon: '🙌',
+                difficulty: 'ง่าย',
+                description: 'ยืดตัวตรงแล้วชูมือทั้งสองข้างขึ้นสูงเหนือศีรษะ!',
+                conditionText: 'Wrist_L.y < Shoulder_L.y & Wrist_R.y < Shoulder_R.y',
+                check: (lm) => {
+                    const lWrist = lm[15], rWrist = lm[16];
+                    const lShoulder = lm[11], rShoulder = lm[12];
+                    return lWrist.y < lShoulder.y - 0.08 && rWrist.y < rShoulder.y - 0.08;
+                },
+                getAccuracy: (lm) => {
+                    const lDiff = (lm[11].y - lm[15].y);
+                    const rDiff = (lm[12].y - lm[16].y);
+                    const avg = Math.max(0, (lDiff + rDiff) / 2);
+                    return Math.min(100, Math.round((avg / 0.25) * 100));
+                }
+            },
+            {
+                id: 'right_hand_up',
+                title: 'ชูมือขวาขึ้นฟ้า',
+                icon: '🙋‍♂',
+                difficulty: 'ปานกลาง',
+                description: 'ชูมือขวาขึ้นฟ้าเพียงข้างเดียว และลดมือซ้ายลง!',
+                conditionText: 'Wrist_R.y < Shoulder_R.y & Wrist_L.y > Shoulder_L.y',
+                check: (lm) => {
+                    const lWrist = lm[15], rWrist = lm[16];
+                    const lShoulder = lm[11], rShoulder = lm[12];
+                    return rWrist.y < rShoulder.y - 0.08 && lWrist.y > lShoulder.y;
+                },
+                getAccuracy: (lm) => {
+                    const rDiff = (lm[12].y - lm[16].y);
+                    return Math.min(100, Math.max(0, Math.round((rDiff / 0.25) * 100)));
+                }
+            },
+            {
+                id: 'left_hand_up',
+                title: 'ชูมือซ้ายขึ้นฟ้า',
+                icon: '🙋‍♀️',
+                difficulty: 'ปานกลาง',
+                description: 'ชูมือซ้ายขึ้นฟ้าเพียงข้างเดียว และลดมือขวาลง!',
+                conditionText: 'Wrist_L.y < Shoulder_L.y & Wrist_R.y > Shoulder_R.y',
+                check: (lm) => {
+                    const lWrist = lm[15], rWrist = lm[16];
+                    const lShoulder = lm[11], rShoulder = lm[12];
+                    return lWrist.y < lShoulder.y - 0.08 && rWrist.y > rShoulder.y;
+                },
+                getAccuracy: (lm) => {
+                    const lDiff = (lm[11].y - lm[15].y);
+                    return Math.min(100, Math.max(0, Math.round((lDiff / 0.25) * 100)));
+                }
+            },
+            {
+                id: 'cross_arms_x',
+                title: 'ไขว้แขนรูปตัว X',
+                icon: '🙅‍♂️',
+                difficulty: 'ท้าทาย',
+                description: 'ไขว้แขนทั้งสองข้างไว้ที่หน้าอกให้กลายเป็นตัว X!',
+                conditionText: 'Wrist_L.x < Wrist_R.x (มือสลับฝั่ง) & Wrist.y > Nose.y',
+                required: [0, 11, 12, 15, 16],
+                check: (lm) => {
+                    const lWrist = lm[15], rWrist = lm[16], nose = lm[0];
+                    const crossed = lWrist.x < rWrist.x - 0.03;
+                    const belowFace = lWrist.y > nose.y && rWrist.y > nose.y;
+                    return crossed && belowFace;
+                },
+                getAccuracy: (lm) => {
+                    // ไม่ไขว้ ≈ -0.3, ไขว้แล้ว ≥ 0.1
+                    const crossDist = lm[16].x - lm[15].x;
+                    return clampPct(((crossDist + 0.1) / 0.2) * 100);
+                }
+            },
+            {
+                id: 'squat_down',
+                title: 'ย่อตัวลงต่ำ',
+                icon: '🧘',
+                difficulty: 'ท้าทาย',
+                description: 'ย่อเข่าลงต่ำให้อยู่ในระดับต่ำกว่าปกติ!',
+                conditionText: '(Knee.y - Hip.y) / (Hip.y - Shoulder.y) < 0.55',
+                required: [11, 12, 23, 24, 25, 26],
+                check: (lm) => squatRatio(lm) < 0.55,
+                getAccuracy: (lm) => clampPct(((0.9 - squatRatio(lm)) / 0.35) * 100)
+            },
+            {
+                id: 'strong_muscles',
+                title: 'เบ่งกล้ามสุดพลัง',
+                icon: '💪',
+                difficulty: 'ง่าย',
+                description: 'งอแขนทั้งสองข้างขึ้นมาเบ่งกล้ามให้เห็นความแข็งแรง!',
+                conditionText: 'Wrist.y < Elbow.y & Abs(Elbow.y - Shoulder.y) < 0.15',
+                check: (lm) => {
+                    const lWrist = lm[15], rWrist = lm[16];
+                    const lElbow = lm[13], rElbow = lm[14];
+                    const lShoulder = lm[11], rShoulder = lm[12];
+                    const flexL = lWrist.y < lElbow.y && Math.abs(lElbow.y - lShoulder.y) < 0.15;
+                    const flexR = rWrist.y < rElbow.y && Math.abs(rElbow.y - rShoulder.y) < 0.15;
+                    return flexL && flexR;
+                },
+                getAccuracy: (lm) => {
+                    const lDiff = lm[13].y - lm[15].y;
+                    const rDiff = lm[14].y - lm[16].y;
+                    const avg = Math.max(0, (lDiff + rDiff) / 2);
+                    return Math.min(100, Math.round((avg / 0.15) * 100));
+                }
+            },
+            {
+                id: 'hands_on_hips',
+                title: 'ฮีโร่เท้าเอว',
+                icon: '🧍‍♂️',
+                difficulty: 'ง่าย',
+                description: 'วางข้อมือทั้งสองข้างไว้ที่บริเวณเอวหรือสะโพก!',
+                conditionText: 'Wrist ใกล้ Hip (x,y < 0.10) & Elbow กางออกนอกแนวไหล่',
+                required: [11, 12, 13, 14, 15, 16, 23, 24],
+                check: (lm) => {
+                    const lOnHip = Math.abs(lm[15].y - lm[23].y) < 0.10 && Math.abs(lm[15].x - lm[23].x) < 0.10;
+                    const rOnHip = Math.abs(lm[16].y - lm[24].y) < 0.10 && Math.abs(lm[16].x - lm[24].x) < 0.10;
+                    // ศอกต้องกางออก ไม่ใช่ปล่อยแขนห้อยลงข้างตัว
+                    const elbowsOut = lm[13].x > lm[11].x + 0.05 && lm[14].x < lm[12].x - 0.05;
+                    return lOnHip && rOnHip && elbowsOut;
+                },
+                getAccuracy: (lm) => {
+                    const lErr = Math.hypot(lm[15].x - lm[23].x, lm[15].y - lm[23].y);
+                    const rErr = Math.hypot(lm[16].x - lm[24].x, lm[16].y - lm[24].y);
+                    const handScore = 1 - ((lErr + rErr) / 2) / 0.15;
+                    const elbowOut = ((lm[13].x - lm[11].x) + (lm[12].x - lm[14].x)) / 2;
+                    const elbowScore = Math.min(1, Math.max(0, elbowOut / 0.08));
+                    return clampPct(Math.max(0, handScore) * 60 + elbowScore * 40);
+                }
+            },
+            {
+                id: 'heart_shape',
+                title: 'หัวใจเหนือศีรษะ',
+                icon: '💖',
+                difficulty: 'ปานกลาง',
+                description: 'ชูมือขึ้นเหนือหัวแล้วนำปลายมือมาประกบกันเป็นรูปหัวใจ!',
+                conditionText: 'Wrist.y < Shoulder.y & Abs(Wrist_L.x - Wrist_R.x) < 0.12',
+                check: (lm) => {
+                    const lWrist = lm[15], rWrist = lm[16];
+                    const lShoulder = lm[11], rShoulder = lm[12];
+                    const high = lWrist.y < lShoulder.y - 0.05 && rWrist.y < rShoulder.y - 0.05;
+                    const close = Math.abs(lWrist.x - rWrist.x) < 0.12;
+                    return high && close;
+                },
+                getAccuracy: (lm) => {
+                    const dist = Math.abs(lm[15].x - lm[16].x);
+                    return Math.max(0, Math.min(100, Math.round((1 - dist / 0.15) * 100)));
+                }
+            },
+            {
+                id: 'v_star',
+                title: 'ดาวกระจาย V-Shape',
+                icon: '⭐',
+                difficulty: 'ปานกลาง',
+                description: 'ชูมือทั้งสองข้างเฉียงขึ้นฟ้าทำเป็นรูปตัว V กว้างๆ!',
+                conditionText: 'Wrist.y < Shoulder.y & Abs(Wrist_L.x - Wrist_R.x) > 0.40',
+                check: (lm) => {
+                    const lWrist = lm[15], rWrist = lm[16];
+                    const lShoulder = lm[11], rShoulder = lm[12];
+                    const high = lWrist.y < lShoulder.y - 0.08 && rWrist.y < rShoulder.y - 0.08;
+                    const wide = Math.abs(lWrist.x - rWrist.x) > 0.38;
+                    return high && wide;
+                },
+                getAccuracy: (lm) => {
+                    const width = Math.abs(lm[15].x - lm[16].x);
+                    return Math.min(100, Math.round((width / 0.5) * 100));
+                }
+            },
+            {
+                id: 'one_leg_flamingo',
+                title: 'ทรงตัวขาเดียว',
+                icon: '🦩',
+                difficulty: 'ท้าทาย',
+                description: 'ยกขาข้างใดข้างหนึ่งขึ้นเพื่อยืนทรงตัวด้วยขาข้างเดียว!',
+                conditionText: 'Abs(Knee_L.y - Knee_R.y) > 0.10',
+                required: [23, 24, 25, 26],
+                check: (lm) => {
+                    const lKnee = lm[25], rKnee = lm[26];
+                    return Math.abs(lKnee.y - rKnee.y) > 0.10;
+                },
+                getAccuracy: (lm) => {
+                    const diff = Math.abs(lm[25].y - lm[26].y);
+                    return Math.min(100, Math.round((diff / 0.18) * 100));
+                }
+            },
+            {
+                id: 'salute',
+                title: 'ทำความเคารพ',
+                icon: '🫡',
+                difficulty: 'ปานกลาง',
+                description: 'ยกมือขวาขึ้นมาแตะบริเวณหน้าผากทำท่าทำความเคารพ!',
+                conditionText: 'Abs(Wrist_R.y - Nose.y) < 0.12 & Abs(Wrist_R.x - Nose.x) < 0.18',
+                required: [0, 16],
+                check: (lm) => {
+                    const rWrist = lm[16];
+                    const nose = lm[0];
+                    const nearY = Math.abs(rWrist.y - nose.y) < 0.12;
+                    const nearX = Math.abs(rWrist.x - nose.x) < 0.18;
+                    return nearY && nearX;
+                },
+                getAccuracy: (lm) => {
+                    const errY = Math.abs(lm[16].y - lm[0].y);
+                    return Math.max(0, Math.min(100, Math.round((1 - errY / 0.12) * 100)));
+                }
+            }
+        ];
+
+        // --- Pose Pool (จำท่าที่ปิดไว้ใน localStorage) ---
+        const DISABLED_POSES_KEY = 'poseMaster.disabledPoses';
+
+        function loadActivePoses() {
+            try {
+                const disabled = JSON.parse(localStorage.getItem(DISABLED_POSES_KEY) || '[]');
+                const pool = DEFAULT_POSES.filter(p => !disabled.includes(p.id));
+                return pool.length ? pool : [...DEFAULT_POSES];
+            } catch (e) {
+                return [...DEFAULT_POSES];
+            }
+        }
+
+        function saveActivePoses() {
+            try {
+                const disabled = DEFAULT_POSES
+                    .filter(p => !activePosesPool.some(a => a.id === p.id))
+                    .map(p => p.id);
+                localStorage.setItem(DISABLED_POSES_KEY, JSON.stringify(disabled));
+            } catch (e) {
+                // ไม่มี localStorage ก็เล่นได้ตามปกติ แค่ไม่จำค่า
+            }
+        }
+
+        let activePosesPool = loadActivePoses();
+        let remainingPosesInRound = [...activePosesPool];
+
+        // --- Game State Variables ---
+        let currentPoseIndex = 0;
+        let score = 0;
+        let streak = 0;
+        let posesCompleted = 0;
+        let poseStartTime = null;
+        const STREAK_RESET_SECONDS = 10;
+        let isTeacherMode = false;
+        let isManagerOpen = false;
+        let frameLoopStarted = false;
+        let selectedGameDuration = 60;
+        let timeLeft = 60;
+        let gameTimer = null;
+        let isGameRunning = false;
+        let isTransitioning = false;
+        let transitionTimer = null;
+        let holdStartTime = null;
+        const HOLD_DURATION_REQUIRED = 1.2;
+
+        let activeStream = null;
+        let isCameraActive = false;
+        let isProcessingFrame = false;
+
+        // DOM Elements
+        const webcamElement = document.getElementById('webcam');
+        const canvasElement = document.getElementById('output-canvas');
+        const canvasCtx = canvasElement.getContext('2d');
+        const webcamContainer = document.getElementById('webcam-container');
+        const statusIndicator = document.getElementById('status-indicator');
+        const statusText = document.getElementById('status-text');
+        const holdContainer = document.getElementById('hold-container');
+        const holdTimeSpan = document.getElementById('hold-time');
+        
+        const scoreDisplay = document.getElementById('score-display');
+        const streakDisplay = document.getElementById('streak-display');
+        const timerDisplay = document.getElementById('timer-display');
+        const remainingPosesDisplay = document.getElementById('remaining-poses-display');
+        const cameraSelect = document.getElementById('camera-select');
+
+        const poseTitle = document.getElementById('pose-title');
+        const poseIcon = document.getElementById('pose-icon');
+        const poseDescription = document.getElementById('pose-description');
+        const difficultyBadge = document.getElementById('difficulty-badge');
+        const accuracyPercentage = document.getElementById('accuracy-percentage');
+        const accuracyBar = document.getElementById('accuracy-bar');
+
+        const cvLeftWrist = document.getElementById('cv-left-wrist');
+        const cvRightWrist = document.getElementById('cv-right-wrist');
+        const cvShoulders = document.getElementById('cv-shoulders');
+        const cvCondition = document.getElementById('cv-condition');
+
+        // --- MediaPipe Pose Detector Setup ---
+        const pose = new Pose({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/${file}`
+        });
+
+        pose.setOptions({
+            modelComplexity: 1,
+            smoothLandmarks: true,
+            enableSegmentation: false,
+            minDetectionConfidence: 0.6,
+            minTrackingConfidence: 0.6
+        });
+
+        pose.onResults(onPoseResults);
+
+        // --- Camera Handling ---
+        async function initCameraAndStart() {
+            sound.init();
+            const errorMsgEl = document.getElementById('camera-error-msg');
+            const errorTextEl = document.getElementById('camera-error-text');
+            errorMsgEl.classList.add('hidden');
+
+            try {
+                await startCameraStream();
+                document.getElementById('camera-prompt').classList.add('hidden');
+                startNewRound();
+            } catch (err) {
+                console.error("Camera Init Error:", err);
+                errorMsgEl.classList.remove('hidden');
+                errorTextEl.innerText = `เปิดกล้องไม่สำเร็จ: ${err.message || 'โปรดอนุญาตสิทธิ์การใช้กล้องเว็บแคม'}`;
+            }
+        }
+
+        async function startCameraStream(deviceId = null) {
+            if (activeStream) {
+                activeStream.getTracks().forEach(track => track.stop());
+            }
+
+            const constraints = {
+                video: deviceId 
+                    ? { deviceId: { exact: deviceId }, width: { ideal: 640 }, height: { ideal: 480 } }
+                    : { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' }
+            };
+
+            try {
+                activeStream = await navigator.mediaDevices.getUserMedia(constraints);
+            } catch (fallbackErr) {
+                // Try fallback to basic video constraint if detailed resolution constraint fails
+                activeStream = await navigator.mediaDevices.getUserMedia({ video: true });
+            }
+
+            webcamElement.srcObject = activeStream;
+            await webcamElement.play();
+            isCameraActive = true;
+
+            await populateCameraDevices();
+            // เริ่มลูปครั้งเดียว ไม่งั้นสลับกล้องแต่ละครั้งจะมีลูปซ้อนเพิ่มขึ้น
+            if (!frameLoopStarted) {
+                frameLoopStarted = true;
+                requestAnimationFrame(processFrameLoop);
+            }
+        }
+
+        async function populateCameraDevices() {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+            try {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const videoDevices = devices.filter(d => d.kind === 'videoinput');
+                
+                cameraSelect.innerHTML = '';
+                videoDevices.forEach((device, index) => {
+                    const option = document.createElement('option');
+                    option.value = device.deviceId;
+                    option.className = 'bg-slate-900 text-white';
+                    option.text = device.label || `กล้องเว็บแคม ${index + 1}`;
+                    cameraSelect.appendChild(option);
+                });
+            } catch (e) {
+                console.warn("Unable to enumerate camera devices", e);
+            }
+        }
+
+        async function changeCamera(deviceId) {
+            if (!deviceId) return;
+            try {
+                await startCameraStream(deviceId);
+            } catch (err) {
+                alert('ไม่สามารถสลับกล้องได้: ' + err.message);
+            }
+        }
+
+        async function processFrameLoop() {
+            if (!isCameraActive) return;
+
+            if (webcamElement.readyState >= 2 && !isProcessingFrame) {
+                isProcessingFrame = true;
+                try {
+                    await pose.send({ image: webcamElement });
+                } catch (err) {
+                    console.error("Frame send error:", err);
+                }
+                isProcessingFrame = false;
+            }
+
+            requestAnimationFrame(processFrameLoop);
+        }
+
+        // --- Pose Drawing and Calculation Loop ---
+        // มุมมอง AI: ซ่อนภาพกล้อง เหลือแค่กริดพิกัด 0–1 กับโครงกระดูก ให้เด็กเห็นว่า AI "มองเห็น" อะไร
+        function drawTeacherBackground() {
+            const w = canvasElement.width, h = canvasElement.height;
+            canvasCtx.fillStyle = '#020617';
+            canvasCtx.fillRect(0, 0, w, h);
+            canvasCtx.strokeStyle = 'rgba(34, 211, 238, 0.15)';
+            canvasCtx.lineWidth = 1;
+            for (let i = 1; i < 10; i++) {
+                canvasCtx.beginPath();
+                canvasCtx.moveTo((w * i) / 10, 0);
+                canvasCtx.lineTo((w * i) / 10, h);
+                canvasCtx.moveTo(0, (h * i) / 10);
+                canvasCtx.lineTo(w, (h * i) / 10);
+                canvasCtx.stroke();
+            }
+        }
+
+        function onPoseResults(results) {
+            const w = webcamContainer.clientWidth, h = webcamContainer.clientHeight;
+            if (canvasElement.width !== w || canvasElement.height !== h) {
+                canvasElement.width = w;
+                canvasElement.height = h;
+            }
+
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+
+            if (isTeacherMode) {
+                drawTeacherBackground();
+            } else if (results.image) {
+                canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+            }
+
+            if (results.poseLandmarks && isGameRunning) {
+                const landmarks = results.poseLandmarks;
+                updateCVDebugFeed(landmarks);
+
+                if (isTransitioning) {
+                    drawConnectors(canvasCtx, landmarks, POSE_CONNECTIONS, { color: '#38bdf8', lineWidth: 3 });
+                    drawLandmarks(canvasCtx, landmarks, { color: '#bae6fd', fillColor: '#0284c7', radius: 4 });
+                    setPoseFeedback(false);
+                    canvasCtx.restore();
+                    return;
+                }
+
+                const currentPose = activePosesPool[currentPoseIndex];
+                if (!currentPose) {
+                    canvasCtx.restore();
+                    return;
+                }
+
+                const visible = isPoseVisible(landmarks, currentPose.required || [11, 12]);
+                const matched = visible && currentPose.check(landmarks);
+                const accuracy = visible ? currentPose.getAccuracy(landmarks) : 0;
+
+                accuracyPercentage.innerText = `${accuracy}%`;
+                accuracyBar.style.width = `${accuracy}%`;
+
+                const lineStyleColor = matched ? '#22c55e' : '#ef4444';
+                const jointStyleColor = matched ? '#86efac' : '#fca5a5';
+
+                drawConnectors(canvasCtx, landmarks, POSE_CONNECTIONS, { color: lineStyleColor, lineWidth: matched ? 6 : 4 });
+                drawLandmarks(canvasCtx, landmarks, { color: jointStyleColor, fillColor: lineStyleColor, radius: matched ? 6 : 4 });
+
+                handlePoseMatchingLogic(matched, visible ? null : 'ถอยออกไปอีกนิด ให้กล้องเห็นทั้งตัว');
+            } else {
+                if (results.poseLandmarks && isTeacherMode) {
+                    drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS, { color: '#38bdf8', lineWidth: 3 });
+                    drawLandmarks(canvasCtx, results.poseLandmarks, { color: '#bae6fd', fillColor: '#0284c7', radius: 4 });
+                }
+                if (isGameRunning) {
+                    // คนออกนอกเฟรม → เริ่มนับเวลาค้างท่าใหม่
+                    holdStartTime = null;
+                    holdContainer.classList.add('hidden');
+                    setPoseFeedback(false, 'ไม่เจอตัวผู้เล่น เข้ามาในกล้องหน่อยนะ');
+                }
+            }
+
+            canvasCtx.restore();
+        }
+
+        function updateCVDebugFeed(lm) {
+            if (!lm || !activePosesPool[currentPoseIndex]) return;
+            const lW = lm[15], rW = lm[16];
+            const avgS = (lm[11].y + lm[12].y) / 2;
+
+            cvLeftWrist.innerText = `x: ${lW.x.toFixed(2)}, y: ${lW.y.toFixed(2)}`;
+            cvRightWrist.innerText = `x: ${rW.x.toFixed(2)}, y: ${rW.y.toFixed(2)}`;
+            cvShoulders.innerText = `y_avg: ${avgS.toFixed(2)}`;
+            cvCondition.innerText = activePosesPool[currentPoseIndex].conditionText;
+        }
+
+        function setPoseFeedback(isCorrect, hintText = null) {
+            if (isCorrect) {
+                webcamContainer.classList.remove('border-feedback-red');
+                webcamContainer.classList.add('border-feedback-green');
+                statusIndicator.classList.remove('bg-rose-600/90');
+                statusIndicator.classList.add('bg-emerald-600/90');
+                statusText.innerText = 'ถูกต้องแล้ว! ค้างไว้ซักครู่...';
+            } else {
+                webcamContainer.classList.remove('border-feedback-green');
+                webcamContainer.classList.add('border-feedback-red');
+                statusIndicator.classList.remove('bg-emerald-600/90');
+                statusIndicator.classList.add('bg-rose-600/90');
+                statusText.innerText = hintText || 'ขยับท่าทางให้ตรงเป้าหมาย...';
+            }
+        }
+
+        function handlePoseMatchingLogic(matched, hintText = null) {
+            if (isTransitioning) return;
+
+            if (matched) {
+                setPoseFeedback(true);
+                if (!holdStartTime) holdStartTime = Date.now();
+
+                const elapsed = (Date.now() - holdStartTime) / 1000;
+                const remaining = Math.max(0, HOLD_DURATION_REQUIRED - elapsed).toFixed(1);
+                
+                holdContainer.classList.remove('hidden');
+                holdTimeSpan.innerText = `${remaining}`;
+
+                if (elapsed >= HOLD_DURATION_REQUIRED) {
+                    onPoseSuccess();
+                }
+            } else {
+                setPoseFeedback(false, hintText);
+                holdStartTime = null;
+                holdContainer.classList.add('hidden');
+            }
+        }
+
+        // --- Game Logic & Flow ---
+        function onPoseSuccess() {
+            if (!isGameRunning) return;
+            sound.playSuccess();
+            confetti({ particleCount: 80, spread: 70, origin: { y: 0.6 } });
+
+            score += 100 + (streak * 20);
+            streak += 1;
+            posesCompleted += 1;
+
+            scoreDisplay.innerText = score;
+            streakDisplay.innerText = `🔥 ${streak}`;
+
+            holdStartTime = null;
+            holdContainer.classList.add('hidden');
+
+            // ลบท่าที่เพิ่งโพสสำเร็จออกจากสระท่าทางรอบนี้
+            const completedPose = activePosesPool[currentPoseIndex];
+            remainingPosesInRound = remainingPosesInRound.filter(p => p.id !== completedPose.id);
+
+            // หากเล่นครบทุกท่าในคลังแล้ว ให้เติมท่าทางกลับมาใหม่เต็มจำนวน
+            if (remainingPosesInRound.length === 0) {
+                remainingPosesInRound = [...activePosesPool];
+                score += 300; // โบนัสเล่นครบทุกท่า
+                scoreDisplay.innerText = score;
+            }
+
+            updateRemainingPosesDisplay();
+            startPoseTransition();
+        }
+
+        function startPoseTransition(isFirstPose = false) {
+            isTransitioning = true;
+            holdStartTime = null;
+            holdContainer.classList.add('hidden');
+            document.getElementById('transition-heading').innerText =
+                isFirstPose ? 'เตรียมตัวให้พร้อม! ท่าแรกคือ...' : 'เก่งมาก! เตรียมตัวท่าถัดไป...';
+            
+            if (activePosesPool.length === 0) {
+                alert('ไม่พบท่าทางในระบบ กรุณาเลือกเพิ่มท่าทางก่อนเล่น!');
+                isTransitioning = false;
+                return;
+            }
+
+            // เลือกท่าทางใหม่จากสระท่าที่เหลืออยู่
+            const randomPoseFromRemaining = remainingPosesInRound[Math.floor(Math.random() * remainingPosesInRound.length)];
+            currentPoseIndex = activePosesPool.findIndex(p => p.id === randomPoseFromRemaining.id);
+
+            if (currentPoseIndex === -1) currentPoseIndex = 0;
+
+            updateTargetPoseUI();
+
+            const overlay = document.getElementById('transition-overlay');
+            const poseNameEl = document.getElementById('transition-pose-name');
+            const countdownEl = document.getElementById('countdown-number');
+
+            poseNameEl.innerText = activePosesPool[currentPoseIndex].title;
+            overlay.classList.remove('hidden');
+
+            let count = 3;
+            countdownEl.innerText = count;
+            sound.playBeep();
+
+            if (transitionTimer) clearInterval(transitionTimer);
+
+            transitionTimer = setInterval(() => {
+                count--;
+                if (count > 0) {
+                    countdownEl.innerText = count;
+                    sound.playBeep();
+                } else if (count === 0) {
+                    countdownEl.innerText = "เริ่มเลย! 🚀";
+                    sound.playBeep();
+                } else {
+                    clearInterval(transitionTimer);
+                    overlay.classList.add('hidden');
+                    isTransitioning = false;
+                    holdStartTime = null;
+                    poseStartTime = Date.now();
+                }
+            }, 1000);
+        }
+
+        function updateTargetPoseUI() {
+            if (activePosesPool.length === 0) return;
+            const poseData = activePosesPool[currentPoseIndex];
+            poseTitle.innerText = poseData.title;
+            poseIcon.innerText = poseData.icon;
+            poseDescription.innerText = poseData.description;
+            difficultyBadge.innerText = poseData.difficulty;
+
+            poseIcon.classList.remove('bounce-pop');
+            void poseIcon.offsetWidth;
+            poseIcon.classList.add('bounce-pop');
+        }
+
+        function updateRemainingPosesDisplay() {
+            remainingPosesDisplay.innerText = remainingPosesInRound.length;
+        }
+
+        // --- Round / Timer Control ---
+        function startNewRound() {
+            if (gameTimer) clearInterval(gameTimer);
+            document.getElementById('game-modal').classList.add('hidden');
+            resetGameStats();
+            isGameRunning = true;
+            startMainGameTimer();
+            startPoseTransition(true);
+        }
+
+        function startMainGameTimer() {
+            if (gameTimer) clearInterval(gameTimer);
+            timerDisplay.innerText = `${timeLeft}s`;
+
+            gameTimer = setInterval(() => {
+                // หยุดเวลาระหว่างนับถอยหลังเปลี่ยนท่า และระหว่างเปิดหน้าจัดการท่า
+                if (!isGameRunning || isTransitioning || isManagerOpen) return;
+
+                timeLeft--;
+                timerDisplay.innerText = `${timeLeft}s`;
+                if (timeLeft > 0 && timeLeft <= 5) sound.playBeep();
+
+                // ทำท่าเดิมนานเกินไป → ตัด streak
+                if (streak > 0 && poseStartTime && (Date.now() - poseStartTime) / 1000 > STREAK_RESET_SECONDS) {
+                    streak = 0;
+                    streakDisplay.innerText = '🔥 0';
+                }
+
+                if (timeLeft <= 0) endGame();
+            }, 1000);
+        }
+
+        function endGame() {
+            isGameRunning = false;
+            isTransitioning = false;
+            if (gameTimer) clearInterval(gameTimer);
+            if (transitionTimer) clearInterval(transitionTimer);
+            gameTimer = null;
+            holdStartTime = null;
+
+            document.getElementById('transition-overlay').classList.add('hidden');
+            holdContainer.classList.add('hidden');
+            setPoseFeedback(false, 'หมดเวลาแล้ว!');
+
+            document.getElementById('modal-score').innerText = score;
+            document.getElementById('modal-message').innerText =
+                `เก่งมากเลย! น้องๆ ทำท่าสำเร็จไปทั้งหมด ${posesCompleted} ท่า`;
+            document.getElementById('game-modal').classList.remove('hidden');
+
+            sound.playSuccess();
+            confetti({ particleCount: 150, spread: 100, origin: { y: 0.5 } });
+        }
+
+        function resetGame() {
+            if (!isCameraActive) {
+                resetGameStats();
+                return;
+            }
+            startNewRound();
+        }
+
+        function closeModalAndRestart() {
+            document.getElementById('game-modal').classList.add('hidden');
+            resetGame();
+        }
+
+        function changeGameDuration(value) {
+            selectedGameDuration = parseInt(value, 10) || 60;
+            if (isGameRunning) {
+                resetGame();
+            } else {
+                timeLeft = selectedGameDuration;
+                timerDisplay.innerText = `${timeLeft}s`;
+            }
+        }
+
+        function toggleTeacherMode() {
+            isTeacherMode = !isTeacherMode;
+            document.getElementById('teacher-toggle-text').innerText = isTeacherMode ? 'มุมมองกล้อง' : 'มุมมอง AI';
+        }
+
+        function resetGameStats() {
+            if (transitionTimer) clearInterval(transitionTimer);
+            score = 0;
+            streak = 0;
+            posesCompleted = 0;
+            holdStartTime = null;
+            poseStartTime = null;
+            timeLeft = selectedGameDuration;
+            holdContainer.classList.add('hidden');
+            accuracyPercentage.innerText = '0%';
+            accuracyBar.style.width = '0%';
+            
+            remainingPosesInRound = [...activePosesPool];
+            currentPoseIndex = 0;
+            isTransitioning = false;
+            
+            scoreDisplay.innerText = score;
+            streakDisplay.innerText = `🔥 0`;
+            timerDisplay.innerText = `${timeLeft}s`;
+            updateRemainingPosesDisplay();
+
+            document.getElementById('transition-overlay').classList.add('hidden');
+            updateTargetPoseUI();
+        }
+
+        function openPoseManagerModal() {
+            isManagerOpen = true;
+            renderPoseManagerList();
+            document.getElementById('pose-manager-modal').classList.remove('hidden');
+        }
+
+        function closePoseManagerModal() {
+            isManagerOpen = false;
+            document.getElementById('pose-manager-modal').classList.add('hidden');
+            if (isGameRunning) {
+                resetGame();
+            }
+        }
+
+        function renderPoseManagerList() {
+            const listContainer = document.getElementById('pose-manager-list');
+            listContainer.innerHTML = '';
+
+            DEFAULT_POSES.forEach((poseItem) => {
+                const isActive = activePosesPool.some(p => p.id === poseItem.id);
+                const itemEl = document.createElement('div');
+                itemEl.className = `flex items-center justify-between p-3 rounded-2xl border ${isActive ? 'bg-indigo-950/80 border-indigo-500/40' : 'bg-slate-900/60 border-slate-800 opacity-60'} transition`;
+
+                itemEl.innerHTML = `
+                    <div class="flex items-center space-x-3">
+                        <span class="text-2xl">${poseItem.icon}</span>
+                        <div>
+                            <div class="text-sm font-bold text-white">${poseItem.title}</div>
+                            <div class="text-xs text-indigo-300">${poseItem.difficulty} • ${poseItem.description}</div>
+                        </div>
+                    </div>
+                    <button onclick="togglePoseActive('${poseItem.id}')" class="shrink-0 ml-2 px-3 py-1.5 rounded-xl text-xs font-bold transition ${isActive ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'bg-slate-800 text-slate-400'}">
+                        ${isActive ? '<i class="fa-solid fa-check mr-1"></i>ใช้งาน' : 'ปิดไว้'}
+                    </button>
+                `;
+                listContainer.appendChild(itemEl);
+            });
+        }
+
+        function togglePoseActive(poseId) {
+            const exists = activePosesPool.some(p => p.id === poseId);
+            if (exists) {
+                if (activePosesPool.length <= 1) {
+                    alert('ต้องมีอย่างน้อย 1 ท่าทางในระบบสำหรับการเล่น!');
+                    return;
+                }
+                activePosesPool = activePosesPool.filter(p => p.id !== poseId);
+            } else {
+                const target = DEFAULT_POSES.find(p => p.id === poseId);
+                if (target) activePosesPool.push(target);
+            }
+            remainingPosesInRound = [...activePosesPool];
+            saveActivePoses();
+            renderPoseManagerList();
+            updateRemainingPosesDisplay();
+        }
+
+        function restoreDefaultPoses() {
+            activePosesPool = [...DEFAULT_POSES];
+            remainingPosesInRound = [...activePosesPool];
+            saveActivePoses();
+            renderPoseManagerList();
+            updateRemainingPosesDisplay();
+        }
+
+        // แสดงจำนวนท่าตามค่าที่โหลดมาจาก localStorage
+        updateRemainingPosesDisplay();
+        updateTargetPoseUI();
+    </script>
+</body>
+</html>
